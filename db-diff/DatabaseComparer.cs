@@ -8,6 +8,9 @@ using Npgsql;
 
 namespace database_diff;
 
+// TODO:
+// - check parameters types
+
 public class DatabaseComparer
 {
     private readonly string _pgsqlConnectionString;
@@ -21,21 +24,23 @@ public class DatabaseComparer
     private readonly string[] _mssqlKeyColumns;
     private readonly string[]? _pgsqlKeyColumns;
 
+    private readonly string _outputFilename;
     private bool _areEqual = true;
 
     public DatabaseComparer(string mssqlConnectionString,
         string mssqlQuery, string pgsqlConnectionString, string? pgsqlQuery,
         string[]? mssqlKeyColumns, string[]? pgsqlKeyColumns,
-        Dictionary<string, object>? mssqlParameters, Dictionary<string, object>? pgsqlParameters)
+        Dictionary<string, object>? mssqlParameters, Dictionary<string, object>? pgsqlParameters, string outputFilename)
     {
-        this._mssqlParameters = mssqlParameters;
-        this._mssqlConnectionString = mssqlConnectionString;
-        this._mssqlQuery = mssqlQuery;
-        this._pgsqlConnectionString = pgsqlConnectionString;
-        this._pgsqlQuery = pgsqlQuery ?? mssqlQuery;
-        this._mssqlKeyColumns = mssqlKeyColumns;
-        this._pgsqlParameters = pgsqlParameters ?? mssqlParameters;
-        this._pgsqlKeyColumns = pgsqlKeyColumns;
+        _mssqlParameters = mssqlParameters;
+        _mssqlConnectionString = mssqlConnectionString;
+        _mssqlQuery = mssqlQuery;
+        _pgsqlConnectionString = pgsqlConnectionString;
+        _pgsqlQuery = pgsqlQuery ?? mssqlQuery;
+        _mssqlKeyColumns = mssqlKeyColumns;
+        _pgsqlParameters = pgsqlParameters ?? mssqlParameters;
+        _pgsqlKeyColumns = pgsqlKeyColumns;
+        _outputFilename = outputFilename;
     }
 
     public void CompareQueryResults()
@@ -72,7 +77,10 @@ public class DatabaseComparer
                     }
 
                     PrintMismatchedRows(mssqlDiffRows, pgsqlDiffRows);
-                    File.WriteAllText("output.html", MismatchedRowsToHtml(mssqlDiffRows, pgsqlDiffRows));
+                    Console.WriteLine(_outputFilename);
+                    File.WriteAllText(
+                        _outputFilename.IsNullOrEmpty() ? "output.html" : string.Concat(_outputFilename, ".html"),
+                        MismatchedRowsToHtml(mssqlDataTable.Columns, mssqlDiffRows, pgsqlDiffRows));
                 }
             }
             // with key columns
@@ -98,9 +106,12 @@ public class DatabaseComparer
                     Console.WriteLine("Tables are not equal");
                     PrintMismatchedRows(mssqlMissingRows, pgsqlMissingRows, mssqlMismatchedRows, pgsqlMismatchedRows,
                         mssqlMismatchedColumns, pgsqlMismatchedColumns);
-                    File.WriteAllText("output.html", MismatchedRowsToHtml(mssqlMissingRows, pgsqlMissingRows,
-                        mssqlMismatchedRows, pgsqlMismatchedRows,
-                        mssqlMismatchedColumns, pgsqlMismatchedColumns));
+                    File.WriteAllText(
+                        _outputFilename.IsNullOrEmpty() ? "output.html" : string.Concat(_outputFilename, ".html"),
+                        MismatchedRowsToHtml(mssqlDataTable.Columns, mssqlMissingRows,
+                            pgsqlMissingRows,
+                            mssqlMismatchedRows, pgsqlMismatchedRows,
+                            mssqlMismatchedColumns, pgsqlMismatchedColumns));
                 }
             }
         }
@@ -172,7 +183,7 @@ public class DatabaseComparer
         mssqlMismatchedColumns.Add(mssqlRowNumber, mssqlDiffColumnsSet);
         pgsqlMismatchedColumns.Add(pgsqlRowNumber, pgsqlDiffColumnsSet);
     }
-    
+
     private bool AreDataRowsEqual(DataRow mssqlDataRow, DataRow pgsqlDataRow)
     {
         for (int i = 0; i < mssqlDataRow.ItemArray.Length; i++)
@@ -183,12 +194,13 @@ public class DatabaseComparer
 
         return true;
     }
-    
+
 
     private void PrintMismatchedRows(Dictionary<int, DataRow> mssqlMissingRows,
         Dictionary<int, DataRow> pgsqlMissingRows, Dictionary<int, DataRow> mssqlMismatchedRows = null,
         Dictionary<int, DataRow> pgsqlMismatchedRows = null,
-        Dictionary<int, HashSet<int>> mssqlMismatchedColumns = null, Dictionary<int, HashSet<int>> pgsqlMismatchedColumns = null)
+        Dictionary<int, HashSet<int>> mssqlMismatchedColumns = null,
+        Dictionary<int, HashSet<int>> pgsqlMismatchedColumns = null)
     {
         var keys = new List<int>(mssqlMissingRows.Keys);
         var printedKeys = new HashSet<int>();
@@ -196,22 +208,22 @@ public class DatabaseComparer
         if (!mssqlMismatchedRows.IsNullOrEmpty()) keys.AddRange(mssqlMismatchedRows.Keys);
         if (!pgsqlMismatchedRows.IsNullOrEmpty()) keys.AddRange(pgsqlMismatchedRows.Keys);
         keys.Sort();
+
+        if (!mssqlMismatchedRows.IsNullOrEmpty())
+            for (int i = 0; i < mssqlMismatchedRows.Count; i++)
+            {
+                var mssqlKey = mssqlMismatchedRows.Keys.ElementAt(i);
+                Console.Write($"  row {mssqlKey}: ");
+                PrintDataRow(mssqlMismatchedRows.Values.ElementAt(i), mssqlMismatchedColumns[mssqlKey]);
+                var pgsqlKey = pgsqlMismatchedRows.Keys.ElementAt(i);
+                Console.Write($"  row {pgsqlKey}: ");
+                PrintDataRow(pgsqlMismatchedRows.Values.ElementAt(i), pgsqlMismatchedColumns[pgsqlKey]);
+            }
+
         foreach (var key in keys)
         {
             if (!printedKeys.Contains(key))
             {
-                if (!mssqlMismatchedRows.IsNullOrEmpty() && mssqlMismatchedRows.ContainsKey(key))
-                {
-                    Console.Write($"  row {key}: ");
-                    PrintDataRow(mssqlMismatchedRows[key], mssqlMismatchedColumns[key]);
-                }
-
-                if (!pgsqlMismatchedRows.IsNullOrEmpty() && pgsqlMismatchedRows.ContainsKey(key))
-                {
-                    Console.Write($"  row {key}: ");
-                    PrintDataRow(pgsqlMismatchedRows[key], pgsqlMismatchedColumns[key]);
-                }
-
                 if (mssqlMissingRows.ContainsKey(key))
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
@@ -265,7 +277,7 @@ public class DatabaseComparer
         Console.WriteLine();
     }
 
-    private string MismatchedRowsToHtml(Dictionary<int, DataRow> mssqlMissingRows,
+    private string MismatchedRowsToHtml(DataColumnCollection mssqlColumns, Dictionary<int, DataRow> mssqlMissingRows,
         Dictionary<int, DataRow> pgsqlMissingRows, Dictionary<int, DataRow> mssqlMismatchedRows = null,
         Dictionary<int, DataRow> pgsqlMismatchedRows = null,
         Dictionary<int, HashSet<int>> mssqlMismatchedColumns = null,
@@ -291,7 +303,7 @@ public class DatabaseComparer
         writer.WriteLine("<tr>");
         writer.WriteLine("<th>DBMS</th>");
         writer.WriteLine("<th>Row number</th>");
-        foreach (DataColumn column in mssqlMissingRows.Values.First().Table.Columns)
+        foreach (DataColumn column in mssqlColumns)
         {
             writer.WriteLine("<th>{0}</th>", column.ColumnName);
         }
@@ -304,26 +316,28 @@ public class DatabaseComparer
         if (!mssqlMismatchedRows.IsNullOrEmpty()) keys.AddRange(mssqlMismatchedRows.Keys);
         if (!pgsqlMismatchedRows.IsNullOrEmpty()) keys.AddRange(pgsqlMismatchedRows.Keys);
         keys.Sort();
+        if (!mssqlMismatchedRows.IsNullOrEmpty())
+            for (int i = 0; i < mssqlMismatchedRows.Count; i++)
+            {
+                var mssqlKey = mssqlMismatchedRows.Keys.ElementAt(i);
+                writer.WriteLine("<tr>");
+                writer.WriteLine("<td>MSSQL</td>");
+                writer.WriteLine("<td>{0}</td>", mssqlKey);
+                writer.WriteLine(DataRowToHtml(mssqlMismatchedRows.Values.ElementAt(i),
+                    mssqlMismatchedColumns[mssqlKey]));
+
+                var pgsqlKey = pgsqlMismatchedRows.Keys.ElementAt(i);
+                writer.WriteLine("<tr>");
+                writer.WriteLine("<td>PgSQL</td>");
+                writer.WriteLine("<td>{0}</td>", pgsqlKey);
+                writer.WriteLine(DataRowToHtml(pgsqlMismatchedRows.Values.ElementAt(i),
+                    pgsqlMismatchedColumns[pgsqlKey]));
+            }
+
         foreach (var key in keys)
         {
             if (!printedKeys.Contains(key))
             {
-                if (!mssqlMismatchedRows.IsNullOrEmpty() && mssqlMismatchedRows.ContainsKey(key))
-                {
-                    writer.WriteLine("<tr>");
-                    writer.WriteLine("<td>MSSQL</td>");
-                    writer.WriteLine("<td>{0}</td>", key);
-                    writer.WriteLine(DataRowToHtml(mssqlMismatchedRows[key], mssqlMismatchedColumns[key]));
-                }
-
-                if (!pgsqlMismatchedRows.IsNullOrEmpty() && pgsqlMismatchedRows.ContainsKey(key))
-                {
-                    writer.WriteLine("<tr>");
-                    writer.WriteLine("<td>PgSQL</td>");
-                    writer.WriteLine("<td>{0}</td>", key);
-                    writer.WriteLine(DataRowToHtml(pgsqlMismatchedRows[key], pgsqlMismatchedColumns[key]));
-                }
-
                 if (mssqlMissingRows.ContainsKey(key))
                 {
                     writer.WriteLine("<tr class=\"red-row\">");

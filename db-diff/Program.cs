@@ -31,6 +31,10 @@ class Program
 
         [Option("pgsql-keycolumns", Separator = ',', Required = false, HelpText = "PostgreSQL key columns")]
         public IEnumerable<string>? PgsqlKeyColumns { get; set; }
+        
+        [Option('o', "output-filename", Required = false, HelpText = "Output filename")]
+        public string? OutputFilename { get; set; }
+        
     }
 
 
@@ -65,7 +69,10 @@ class Program
 
         var dbc = new DatabaseComparer(options.MssqlConnectionString, options.MssqlQuery, options.PgsqlConnectionString,
             options.PgsqlQuery, options.MssqlKeyColumns.ToArray(), options.PgsqlKeyColumns.ToArray(),
-            mssqlParametersDictionary, pgsqlParametersDictionary);
+            mssqlParametersDictionary, pgsqlParametersDictionary, options.OutputFilename);
         dbc.CompareQueryResults();
+        Console.WriteLine("Press enter to exit");
+        Console.ReadLine();
+        
     }
 }
