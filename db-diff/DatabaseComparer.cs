@@ -8,9 +8,6 @@ using Npgsql;
 
 namespace database_diff;
 
-// TODO:
-// - check parameters types
-
 public class DatabaseComparer
 {
     private readonly string _pgsqlConnectionString;
